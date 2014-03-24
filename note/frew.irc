@@ -1,0 +1,47 @@
+2014-03-24 18:19:15	ingy	yo
+2014-03-24 18:19:37	frew	what's up? (back and forth between work and irc)
+2014-03-24 18:19:42	ingy	I just came up with an idea that is huge.
+2014-03-24 18:19:47	frew	tell me
+2014-03-24 18:19:50	ingy	I call it live-demo
+2014-03-24 18:19:59	ingy	you know about vroom, right?
+2014-03-24 18:20:03	frew	yessir
+2014-03-24 18:20:20	frew	they use it at google btw, that's kinda cool
+2014-03-24 18:20:29	ingy	well I was thinking about my upcoming talk on git-hub in .tw
+2014-03-24 18:20:34	frew	sure
+2014-03-24 18:21:04	frew	https://github.com/google/maktaba/tree/master/vroom
+2014-03-24 18:21:13	ingy	so this is infintely better
+2014-03-24 18:21:17	frew	k
+2014-03-24 18:21:21	ingy	it's a shell
+2014-03-24 18:21:41	ingy	> live-demo git-hub.demo
+2014-03-24 18:22:07	ingy	you press a key and it types out the next command
+2014-03-24 18:22:17	ingy	then you hit enter and it runs it
+2014-03-24 18:22:27	frew	so it's a real demo, but you don't have to be typing up there
+2014-03-24 18:22:49	ingy	I could put the demo on termcast.pairup.net on autoplay/loop
+2014-03-24 18:23:01	frew	also it would be cool if you press a key, it shows what it will run, then press a key to run it
+2014-03-24 18:23:02	ingy	you can also type in any shell commands
+2014-03-24 18:23:06	frew	for security, etc
+2014-03-24 18:23:09	frew	sure
+2014-03-24 18:23:11	ingy	that's what I said
+2014-03-24 18:23:15	frew	ah ok
+2014-03-24 18:23:17	frew	I missed that
+2014-03-24 18:23:26	frew	ah yeah, you did
+2014-03-24 18:23:27	frew	nice
+2014-03-24 18:23:30	ingy	also it records the commands you type in by hand
+2014-03-24 18:23:38	frew	for next time or something?
+2014-03-24 18:23:43	frew	or iterating on it
+2014-03-24 18:23:45	ingy	so you can make demos just as easy
+2014-03-24 18:23:48	frew	irght
+2014-03-24 18:23:49	ingy	yeah
+2014-03-24 18:24:00	frew	how does it handle interactive stuff?
+2014-03-24 18:24:04	frew	pw prompts etc
+2014-03-24 18:24:11	frew	just punts and requires the user to jump in there?
+2014-03-24 18:24:23	ingy	you can launch browsers etc
+2014-03-24 18:24:37	ingy	or vim to specific line numbers
+2014-03-24 18:24:38	frew	sure
+2014-03-24 18:25:00	ingy	I'll answer that when I write it
+2014-03-24 18:25:05	ingy	:)
+2014-03-24 18:25:28	frew	heh
+2014-03-24 18:25:29	ingy	you can even emulate vroom by catting files
+2014-03-24 18:25:39	ingy	or vimming them
+2014-03-24 18:25:43	frew	sure
+2014-03-24 18:26:03	ingy	I'll whip up a prototype
