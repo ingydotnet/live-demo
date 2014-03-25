@@ -1,0 +1,4 @@
+- http://stackoverflow.com/questions/11596059/how-do-i-read-any-one-key-in-bash
+  - read -n 1 x; while read -n 1 -t .1 y; do x="$x$y"; done
+- http://stackoverflow.com/questions/5297638/bash-how-to-end-infinite-loop-with-any-key-pressed?rq=1
+
