@@ -1,5 +1,12 @@
 == Input control
 - stty
+- readline
+- bind -x
+
+== Vars
+- PROMPT_COMMAND
+- HISTFILE
+- HISTCMD
 
 == Fun
 - sl

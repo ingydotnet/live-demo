@@ -1,0 +1,9 @@
+# Hello. My name is Ingy döt Net.
+# Today I want to show you a new command called `git hub`.
+git hub -h
+git hub help
+git help hub
+git hub user
+git hub repos
+git hub repos --raw --count=5
+# THE END

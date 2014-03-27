@@ -10,6 +10,7 @@ export PATH="$BASHLIB:$PATH"
 
 source bash+ ':std'
 
+LIVEDEMO_RUNNER=1
 use Live-Demo
 
 live-demo-run "$@"
