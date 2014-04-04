@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Default title 'LiveDemo™ — git-hub - All Your GitHub int the Terminal
 # Warn on ctl-d (before exiting live-demo).
 # ++ - adds last command to the history
 # == - replaces last command in history with current one
@@ -47,6 +48,7 @@ live-demo-run() {
   export LIVEDEMO_DEMO_FILE="$demo_file"
   export LIVEDEMO_HISTORY_FILE="$history_file"
   export LIVEDEMO_REPL_PROMPT="$repl_prompt"
+  export INPUTRC=/dev/null
 
   $BASH --rcfile $BASH_SOURCE
 }
@@ -96,40 +98,9 @@ get-opts() {
 }
 
 #------------------------------------------------------------------------------
-start-demo-command() {
-  demo_command="${demo_input[$demo_counter]%$'\n'}"
-  echo -en "\033]2;$demo_command\007";
-  fast-input-mode
-}
 
-type-next-char() {
-  echo -en "\033]2;Live Demo™\007";
-  if [ $READLINE_POINT -lt ${#demo_command} ]; then
-    READLINE_LINE+="${demo_command:$READLINE_POINT:1}"
-    READLINE_POINT=${#READLINE_LINE}
-    bind '\C-m:"\C-e \C-j\C-t5"'
-  else
-    bind '"\C-m":"\C-t3\C-t4\C-t5"'
-  fi
-}
-
-finish-demo-command() {
-  if [ "$demo_command" == '# THE END' ]; then
-    exit
-  fi
-  demo_command=
-  demo_counter=$((demo_counter + 1))
-}
-
-normal-input-mode() {
-  # `` and \\ - Start fast input mode with next demo command:
-  bind '"``":"\C-u\C-t1"'
-  bind '"\\\\":"\C-u\C-t1"'
-  bind '"\C-`":"\C-l\C-u\C-t1"'
-
-  # <ENTER> - Adds a <SPACE> at end to satisfy HISTIGNORE:
-  bind '"\C-m":"\C-e \C-j\C-t5"'
-
+# LiveDemo gets its magics from clever readline key bindings:
+setup-key-bindings() {
   # Bind command to Control-t #. Lets us do tricks:
   bind -x '"\C-t1":start-demo-command'
   bind -x '"\C-t2":type-next-char'
@@ -137,19 +108,99 @@ normal-input-mode() {
   bind -x '"\C-t4":finish-demo-command'
   bind -x '"\C-t5":normal-input-mode'
 
-  # Reset a-z to normal input:
-  for k in $(echo "abcdefghijklmnopqrstuvwxyz" | grep -o .); do
-    bind $k:self-insert
-  done
-  bind '" ":self-insert'
+  fast_keys=($(
+    echo "abcdefghijklmnopqrstuvwxyz1234567890;,." | grep -o .
+  ))
+
+  normal-input-mode
 }
 
-# Let any key a-z type the next input char. (Easier than typing lessons!)
+start-demo-command() {
+  demo_command="${demo_input[$demo_counter]%$'\n'}"
+  title-preview-and-insert
+  fast-input-mode
+}
+
+type-next-char() {
+  title-insert
+  if [ $READLINE_POINT -lt ${#demo_command} ]; then
+    READLINE_LINE+="${demo_command:$READLINE_POINT:1}"
+    READLINE_POINT=${#READLINE_LINE}
+    bind-enter-normal
+  else
+    bind-enter-demo
+  fi
+}
+
+finish-demo-command() {
+  if [ $READLINE_POINT -lt ${#demo_command} ]; then
+    demo_counter=$((demo_counter + 1))
+  fi
+  demo_command=
+  if [ $demo_counter -ge ${#demo_input[@]} ]; then
+    exit 0
+  fi
+}
+
+normal-input-mode() {
+  title-reset
+
+  # <SPACE><SPACE> - Start fast input mode with next demo command:
+  bind '"  ":"\C-u\C-t1"'
+
+  bind-enter-normal
+
+  # Reset keys to normal input:
+  for k in ${fast_keys[@]}; do
+    bind $k:self-insert
+  done
+}
+
+# Press any keys to type. (Easier than typing lessons!)
 fast-input-mode() {
-  for k in $(echo "abcdefghijklmnopqrstuvwxyz" | grep -o .); do
+  # Remove double-space binding during fast input mode.
+  bind -r "  "
+  # bind '"  ":self-insert'
+
+  # Let any key [a-z\ ] type the next input char:
+  for k in ${fast_keys[@]}; do
     bind '"'$k'":"\C-t2"'
   done
-  bind '" ":"\C-t2"'
+}
+
+# Put the command in the terminal title for a sneak preview.
+title-preview-and-insert() {
+  echo -en "\033]2;$demo_command\007";
+  (( sleep 1; title-insert; ) & ) 2> /dev/null
+}
+
+title-reset() {
+  echo -en "\033]2;Live Demo™\007";
+}
+
+title-insert() {
+  echo -en "\033]2;-- INSERT --\007";
+}
+
+# Adds a <SPACE> at end to satisfy HISTIGNORE.
+# (normal commands not added to demo history)
+bind-enter-normal() {
+  bind '\C-m:"\C-e \C-j\C-t5"'
+}
+
+bind-enter-demo() {
+  bind '"\C-m":"\C-t3\C-t4\C-t5"'
+}
+
+# XXX Not working yet. Need to restart bash in current state.
+confirm-exit() {
+  $LIVEDEMO_DONE && exit 0
+  echo -n 'Really exit LiveDemo™? [yN] '
+  read line
+  if [[ "$line" =~ [yY] ]]; then
+    exit
+  fi
+  $BASH --rcfile $BASH_SOURCE
 }
 
 #------------------------------------------------------------------------------
@@ -159,7 +210,10 @@ if [ -z "$LIVEDEMO_RUNNER" ]; then
   HISTIGNORE='* '
   PS1="$LIVEDEMO_REPL_PROMPT"
 
-  normal-input-mode
+  # export LIVEDEMO_DONE=false
+  # trap confirm-exit EXIT
+
+  setup-key-bindings
 
   demo_counter=0
   readarray demo_input < <(cat "$LIVEDEMO_DEMO_FILE")
