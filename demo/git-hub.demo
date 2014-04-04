@@ -1,9 +1,0 @@
-# Hello. My name is Ingy döt Net.
-# Today I want to show you a new command called `git hub`.
-git hub -h
-git hub user
-git hub config | perl -pe 's/\S{40}/********/'
-git hub user aocole
-git hub repos aocole
-git hub repos aocole --raw --count=5
-# THE END
