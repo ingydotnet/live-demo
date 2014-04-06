@@ -12,3 +12,8 @@
 - sl
 - cowsay
 
+== Messages
+- zenity
+- notify-send
+- whiptail
+- dialog

@@ -1,20 +1,10 @@
 #!/usr/bin/env bash
 
-# Default title 'LiveDemo™ — git-hub - All Your GitHub int the Terminal
-# Warn on ctl-d (before exiting live-demo).
-# ++ - adds last command to the history
-# == - replaces last command in history with current one
-# -- - delete last command in history
-# Adding remaining lines to history on exit
-# \s - save history to demo file
-# \g - prompt for command # to goto
-# Look for config next to demo-file
+# Support special meta commands in demo input file
 # Maybe put live-demo into a single file (bin/live-demo)
   # Put config inside demo file
 # Support http:// demo files
 # Make a colorful prompt
-# Find cool/fun terminal apps like cowsay and sl
-# Support special meta commands in demo input file
 
 set -e
 
@@ -25,35 +15,41 @@ Options:
 --
 h           Show the command summary
  
-r,record    Save new commands
-a,auto      Play demo automatically
-l,loop      Replay the demo at the end
-d,delay=    Seconds to pause between autoplay commands
-c,clear     Clear screen screen before each command
-p,prompt=   Shell prompt to use
-f,config=   Config file location
-g,goto=     Start demo at a certain number
+p,prompt=   Set the demo prompt to use
+g,goto=     Start demo at the specified command number
  
 x           Debug - Turn on Bash trace (set -x) output
 "
 
-live-demo-run() {
-  local demo_file= history_file= config_file= repl_prompt=
-  local record_mode=false auto_play=false loop_mode=false
-  local delay_time=5 clear_screen=false slow_type=true
-  local demo_input=() demo_counter= goto_number=1
+help() {
+  alert \
+'In Demo mode, type any alphanumeric keys to type out the command, or press
+<TAB> at any point to complete the demo command.
 
+The following key sequences can be used at any point:
+
+    \h    Show this help screen
+    \\    Toggle between Demo and Shell input modes
+    \l    List all the demo commands
+    \g    Goto the command number that you typed in Shell mode
+    \+    Add previous shell command to history
+    \-    Remove last command in the history
+    \s    Save the current command list back to the demo file
+    C-d   Exit the demo gracefully
+    \X    Exit immediately
+    \?    Show all the internal state variables
+
+'
+}
+
+main() {
   get-opts "$@"
 
-  export LIVEDEMO_DEMO_FILE="$demo_file"
-  export LIVEDEMO_HISTORY_FILE="$history_file"
-  export LIVEDEMO_REPL_PROMPT="$repl_prompt"
-  export INPUTRC=/dev/null
+  export-all
 
   $BASH --rcfile $BASH_SOURCE
 }
 
-#------------------------------------------------------------------------------
 get-opts() {
   [ $# -eq 0 ] && set -- --help
 
@@ -66,65 +62,103 @@ get-opts() {
   while [ $# -gt 0 ]; do
     local option="$1"; shift
     case "$option" in
-      -f) config_file=$1; shift ;;
-      -d) delay_time=$1; shift ;;
-      -s) goto_number=$1; shift ;;
-      -r) record_mode=true ;;
-      -a) auto_play=true ;;
-      -c) clear_screen=true ;;
-
+      -p) livedemo_prompt=$1; shift ;;
+      -g) livedemo_goto=$1; shift ;;
+      -x) set -x ;;
       --) break ;;
-
       *) die "Unexpected option: $option" ;;
     esac
   done
 
-  demo_file="$1"; shift
-  [ -n "$demo_file" ] ||
+  livedemo_demo_file="$1"; shift
+  [ -n "$livedemo_demo_file" ] ||
     die "<demo-file> required"
   [ $# == 0 ] ||
     die "Unknown arguments '$@'"
 
   # Initialize variables:
-  repl_prompt="${LIVEDEMO_PROMPT:-\w \!> }"
-  config_file="${LIVEDEMO_CONFIG:-$HOME/.live-demo/config}"
+  livedemo_repl_prompt="${livedemo_prompt:-LiveDemo™ \w \!> }"
 
-  history_file=$demo_file.$$.history
-
-  [ -n "$demo_file" ] ||
+  [ -n "$livedemo_demo_file" ] ||
     die "<demo-file> argument is required"
-  [ -e "$demo_file" ] ||
-    die "Demo file '$demo_file' does not exist"
+  [ -e "$livedemo_demo_file" ] ||
+    die "Demo file '$livedemo_demo_file' does not exist"
+  livedemo_demo_file="$(abspath "$livedemo_demo_file")"
+  livedemo_demo_dir="$(dirname $livedemo_demo_file)"
 }
+
+export-all() {
+  export HISTFILE=/dev/null
+  export HISTIGNORE='* '
+  export INPUTRC=/dev/null
+
+  for v in $(compgen -v | grep '^livedemo_'); do export $v; done
+
+  export livedemo_running=1
+}
+
+alert() {
+  do-whiptail "$1" || echo -n "$1"
+}
+
+do-whiptail() {
+  [ -n "$(which whiptail)" ] || return 1
+  msg="$1"
+  msg="${msg##$'\n'}"
+  msg="${msg%%$'\n'}"
+  local w=0 h=5
+  while read -r line; do
+    : $((h++))
+    [ ${#line} -gt $w ] && w=${#line}
+  done <<< "$msg"
+  let w=$((w + 4))
+  whiptail --msgbox "$msg" $h $w
+}
+
+abspath() { perl -MCwd -le 'print Cwd::abs_path(shift)' "$1"; }
 
 #------------------------------------------------------------------------------
+demo-input-mode() {
+  livedemo_mode=demo
+  PS1="$livedemo_repl_prompt"
 
-# LiveDemo gets its magics from clever readline key bindings:
-setup-key-bindings() {
-  # Bind command to Control-t #. Lets us do tricks:
-  bind -x '"\C-t1":start-demo-command'
-  bind -x '"\C-t2":type-next-char'
-  bind '"\C-t3":accept-line'
-  bind -x '"\C-t4":finish-demo-command'
-  bind -x '"\C-t5":normal-input-mode'
+  livedemo_command="${livedemo_input[$livedemo_counter]}"
 
-  fast_keys=($(
-    echo "abcdefghijklmnopqrstuvwxyz1234567890;,." | grep -o .
-  ))
+  # Let any key type the next input char:
+  for k in ${fast_keys[@]}; do bind '"'$k'":"\C-tN"'; done
+  # bind '" ":"\C-tN"'
 
-  normal-input-mode
+  # \\ switches to shell input mode:
+  bind '"\\\\":"\C-u\C-tB\C-tA"'
+
+  # TAB completes demo command:
+  bind '"\t":"\C-tT"'
+
+  bind-enter-normal
 }
 
-start-demo-command() {
-  demo_command="${demo_input[$demo_counter]%$'\n'}"
-  title-preview-and-insert
-  fast-input-mode
+shell-input-mode() {
+  livedemo_mode=shell
+  PS1='\w $ '
+
+  livedemo_command=
+
+  # Reset keys to normal input:
+  for k in ${fast_keys[@]}; do bind $k:self-insert; done
+  # bind '" ":self-insert'
+
+  # Start demo input mode:
+  bind '"\\\\":"\C-u\C-tD\C-tA"'
+
+  # Normal tab completion:
+  bind '"\t":complete'
+
+  bind-enter-normal
 }
 
 type-next-char() {
-  title-insert
-  if [ $READLINE_POINT -lt ${#demo_command} ]; then
-    READLINE_LINE+="${demo_command:$READLINE_POINT:1}"
+  if [ $READLINE_POINT -lt ${#livedemo_command} ]; then
+    READLINE_LINE+="${livedemo_command:$READLINE_POINT:1}"
     READLINE_POINT=${#READLINE_LINE}
     bind-enter-normal
   else
@@ -132,92 +166,234 @@ type-next-char() {
   fi
 }
 
+tab-complete-demo-command() {
+  READLINE_LINE="$livedemo_command"
+  READLINE_POINT=${#READLINE_LINE}
+  bind-enter-demo
+}
+
 finish-demo-command() {
-  if [ $READLINE_POINT -lt ${#demo_command} ]; then
-    demo_counter=$((demo_counter + 1))
+  if [ $READLINE_POINT -lt ${#livedemo_command} ]; then
+    livedemo_counter=$((livedemo_counter + 1))
   fi
-  demo_command=
-  if [ $demo_counter -ge ${#demo_input[@]} ]; then
+  livedemo_command=
+  if [ $livedemo_counter -ge ${#livedemo_input[@]} ]; then
+    livedemo_done=true
     exit 0
   fi
+  demo-input-mode
 }
 
-normal-input-mode() {
-  title-reset
-
-  # <SPACE><SPACE> - Start fast input mode with next demo command:
-  bind '"  ":"\C-u\C-t1"'
-
-  bind-enter-normal
-
-  # Reset keys to normal input:
-  for k in ${fast_keys[@]}; do
-    bind $k:self-insert
-  done
-}
-
-# Press any keys to type. (Easier than typing lessons!)
-fast-input-mode() {
-  # Remove double-space binding during fast input mode.
-  bind -r "  "
-  # bind '"  ":self-insert'
-
-  # Let any key [a-z\ ] type the next input char:
-  for k in ${fast_keys[@]}; do
-    bind '"'$k'":"\C-t2"'
-  done
-}
-
-# Put the command in the terminal title for a sneak preview.
-title-preview-and-insert() {
-  echo -en "\033]2;$demo_command\007";
-  (( sleep 1; title-insert; ) & ) 2> /dev/null
-}
-
-title-reset() {
-  echo -en "\033]2;Live Demo™\007";
-}
-
-title-insert() {
-  echo -en "\033]2;-- INSERT --\007";
+finish-shell-command() {
+  shell_command="$READLINE_LINE"
 }
 
 # Adds a <SPACE> at end to satisfy HISTIGNORE.
 # (normal commands not added to demo history)
 bind-enter-normal() {
-  bind '\C-m:"\C-e \C-j\C-t5"'
+  bind '\C-m:"\C-tb\C-e \C-j"'
 }
 
 bind-enter-demo() {
-  bind '"\C-m":"\C-t3\C-t4\C-t5"'
+  bind '\C-m:"\C-tA\C-td\C-tW"'
 }
 
-# XXX Not working yet. Need to restart bash in current state.
-confirm-exit() {
-  $LIVEDEMO_DONE && exit 0
-  echo -n 'Really exit LiveDemo™? [yN] '
-  read line
-  if [[ "$line" =~ [yY] ]]; then
-    exit
+list-commands() {
+  commands-list true
+  echo -n "$output"
+}
+
+commands-list() {
+  local show_marker=$1
+  local i=0 line=
+  output=''
+  for cmd in "${livedemo_input[@]}"; do
+    local marker=' '
+    [ $i -eq $livedemo_counter ] && $show_marker && marker='*'
+    local num=$((++i))
+    printf -v line "%s%3d - %s\n" "$marker" $num "$cmd"
+    output+="$line"
+  done
+}
+
+add-command() {
+  [ -n "$shell_command" ] || return
+  local tmp=("${livedemo_input[@]}")
+  livedemo_input=(
+    "${tmp[@]:0:$livedemo_counter}"
+    "$shell_command"
+    "${tmp[@]:$livedemo_counter}"
+  )
+  : $((livedemo_counter++))
+  shell_command=
+  reset-history
+}
+
+remove-command() {
+  [ $livedemo_counter -gt 0 ] || return
+  local tmp=("${livedemo_input[@]}")
+  livedemo_input=(
+    "${tmp[@]:0:$(($livedemo_counter - 1))}"
+    "${tmp[@]:$livedemo_counter}"
+  )
+  reset-history
+}
+
+goto-command() {
+  [ "$livedemo_mode" == demo ] && return
+  local num="$READLINE_LINE"
+  goto $num
+}
+
+goto() {
+  local num="$1"
+  if [[ ! "$num" =~ ^[0-9]+$ ]] ||
+    [ $num -eq 0 ] ||
+    [ $num -gt ${#livedemo_input[@]} ]
+  then
+      echo "'$num' is not a valid goto number"
+      return 1
   fi
-  $BASH --rcfile $BASH_SOURCE
+  livedemo_counter=$((num - 1))
+  reset-history
+}
+
+reset-history() {
+  history -c
+  for (( i = 0; i < $livedemo_counter; i++ )); do
+    history -s "${livedemo_input[$i]}"
+  done
+  demo-input-mode
+}
+
+save-to-demo-file() {
+  rm -f $livedemo_demo_file
+  for line in "${livedemo_input[@]}"; do
+    echo "$line" >> $livedemo_demo_file
+  done
+  echo "Saved '$livedemo_demo_file'"
+}
+
+confirm-exit() {
+  if ! $livedemo_done; then
+    echo -n 'Really exit LiveDemo™? [yN] '
+    read line
+    if [[ ! "$line" =~ ^[yY]$ ]]; then
+      livedemo_input_lines=
+      for line in "${livedemo_input[@]}"; do
+        livedemo_input_lines+="$line"$'\n'
+      done
+      export-all
+      $BASH --rcfile $BASH_SOURCE
+      exit 0
+    fi
+  fi
+  commands-list false
+  if [ "$output" != "$livedemo_original_input" ]; then
+    while true; do
+      echo -n 'Changes have been made. Save them? [yn] '
+      read line
+      [[ "$line" =~ ^[yYnN]$ ]] || continue
+      if [[ "$line" =~ ^[yY]$ ]]; then
+        save-to-demo-file
+      fi
+      break
+    done
+  fi
+  exit 0
+}
+
+title-set() {
+  echo -en "\033]2;$@\007"
 }
 
 #------------------------------------------------------------------------------
-if [ -z "$LIVEDEMO_RUNNER" ]; then
+# Initialize the LiveDemo™ Bash shell:
+#------------------------------------------------------------------------------
+if [ -n "$livedemo_running" ]; then
   set +e
-  HISTFILE="$LIVEDEMO_HISTORY_FILE"
-  HISTIGNORE='* '
-  PS1="$LIVEDEMO_REPL_PROMPT"
 
-  # export LIVEDEMO_DONE=false
-  # trap confirm-exit EXIT
+  trap confirm-exit EXIT
 
-  setup-key-bindings
+  # LiveDemo gets its magics from clever readline key bindings:
+  bind '"\C-tA":accept-line'
 
-  demo_counter=0
-  readarray demo_input < <(cat "$LIVEDEMO_DEMO_FILE")
-  clear
+  bind -x '"\C-tD":demo-input-mode'
+  bind -x '"\C-td":finish-demo-command'
+
+  bind -x '"\C-tB":shell-input-mode'
+  bind -x '"\C-tb":finish-shell-command'
+
+  bind -x '"\C-tN":type-next-char'
+  bind -x '"\C-tT":tab-complete-demo-command'
+
+  bind -x '"\C-tW":"history -w"'
+
+  bind '"\\+":"\C-ta\C-tW\C-tA"'
+  bind '"\\=":"\C-ta\C-tW\C-tA"'
+  bind -x '"\C-ta":add-command'
+
+  bind '"\\-":"\C-tr\C-tW\C-tA"'
+  bind -x '"\C-tr":remove-command'
+
+  bind '"\\l":"\C-u\C-j\C-tl"'
+  bind -x '"\C-tl":list-commands'
+
+  bind '"\\g":"\C-tg\C-u\C-tA"'
+  bind -x '"\C-tg":goto-command'
+
+  bind '"\\s":"\C-u\C-tA\C-ts"'
+  bind -x '"\C-ts":save-to-demo-file'
+
+  bind '"\\h":"\C-tH"'
+  bind -x '"\C-tH":help'
+
+  bind '"\\?":"\C-u\C-tBenv | grep livedemo_ | sort \C-j"'
+
+  bind '"\\X":"\C-u\C-tBtrap EXIT\C-tA\C-lexit\C-j"'
+
+  fast_keys=($(
+    echo "abcdefghijklmnopqrstuvwxyz1234567890;,." | grep -o .
+  ))
+
+  if [ -z "$livedemo_original_input" ]; then
+    startup=true
+    livedemo_done=false
+    livedemo_counter=0
+    livedemo_input=()
+    while read -r line; do
+      livedemo_input+=("$line")
+    done < "$livedemo_demo_file"
+    if [ -n "$livedemo_goto" ]; then
+      goto "$livedemo_goto" || exit $?
+    fi
+    commands-list false
+    livedemo_original_input="$output"
+  else
+    startup=false
+    livedemo_input=()
+    while read -r line; do
+      livedemo_input+=("$line")
+    done <<< "${livedemo_input_lines%$'\n'}"
+  fi
+
+  cd $HOME
+
+  if $startup; then
+    clear
+    alert "\
+
+     Welcome to LiveDemo™
+
+Press \h at any time for help.
+
+"
+  fi
+
+  demo-input-mode
+
+  export-all
+  reset-history
 fi
 
 # vim: set lisp:
