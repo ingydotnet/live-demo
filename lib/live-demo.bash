@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 
+# == Bugs
+# \g not resetting history #
+
+# == ToDo
 # Support special meta commands in demo input file
-# Maybe put live-demo into a single file (bin/live-demo)
+# bind \<bsp> to undo-demo-command
+
+# == Maybe
+# Put live-demo into a single file (bin/live-demo)
   # Put config inside demo file
 # Support http:// demo files
 # Make a colorful prompt
@@ -17,6 +24,7 @@ h           Show the command summary
  
 p,prompt=   Set the demo prompt to use
 g,goto=     Start demo at the specified command number
+q,quiet     Be more quiet
  
 x           Debug - Turn on Bash trace (set -x) output
 "
@@ -53,6 +61,10 @@ main() {
 get-opts() {
   [ $# -eq 0 ] && set -- --help
 
+  # Initialize variables:
+  livedemo_prompt='LiveDemo™ \w \!> '
+  livedemo_quiet=false
+
   eval "$(
     echo "$OPTIONS_SPEC" |
       git rev-parse --parseopt -- "$@" ||
@@ -64,6 +76,7 @@ get-opts() {
     case "$option" in
       -p) livedemo_prompt=$1; shift ;;
       -g) livedemo_goto=$1; shift ;;
+      -q) livedemo_quiet=true ;;
       -x) set -x ;;
       --) break ;;
       *) die "Unexpected option: $option" ;;
@@ -75,9 +88,6 @@ get-opts() {
     die "<demo-file> required"
   [ $# == 0 ] ||
     die "Unknown arguments '$@'"
-
-  # Initialize variables:
-  livedemo_repl_prompt="${livedemo_prompt:-LiveDemo™ \w \!> }"
 
   [ -n "$livedemo_demo_file" ] ||
     die "<demo-file> argument is required"
@@ -102,6 +112,7 @@ alert() {
 }
 
 do-whiptail() {
+  $livedemo_quiet && return 0
   [ -n "$(which whiptail)" ] || return 1
   msg="$1"
   msg="${msg##$'\n'}"
@@ -120,13 +131,12 @@ abspath() { perl -MCwd -le 'print Cwd::abs_path(shift)' "$1"; }
 #------------------------------------------------------------------------------
 demo-input-mode() {
   livedemo_mode=demo
-  PS1="$livedemo_repl_prompt"
+  PS1="$livedemo_prompt"
 
   livedemo_command="${livedemo_input[$livedemo_counter]}"
 
   # Let any key type the next input char:
   for k in ${fast_keys[@]}; do bind '"'$k'":"\C-tN"'; done
-  # bind '" ":"\C-tN"'
 
   # \\ switches to shell input mode:
   bind '"\\\\":"\C-u\C-tB\C-tA"'
@@ -139,13 +149,13 @@ demo-input-mode() {
 
 shell-input-mode() {
   livedemo_mode=shell
+  livedemo_special=false
   PS1='\w $ '
 
   livedemo_command=
 
   # Reset keys to normal input:
   for k in ${fast_keys[@]}; do bind $k:self-insert; done
-  # bind '" ":self-insert'
 
   # Start demo input mode:
   bind '"\\\\":"\C-u\C-tD\C-tA"'
@@ -157,35 +167,59 @@ shell-input-mode() {
 }
 
 type-next-char() {
+  $livedemo_special && return
+  if [[ "$livedemo_command" =~ ^[♬] ]]; then
+    livedemo_special=true
+    bind-enter-demo
+  fi
   if [ $READLINE_POINT -lt ${#livedemo_command} ]; then
     READLINE_LINE+="${livedemo_command:$READLINE_POINT:1}"
     READLINE_POINT=${#READLINE_LINE}
-    bind-enter-normal
+    $livedemo_special || bind-enter-normal
   else
     bind-enter-demo
   fi
 }
 
 tab-complete-demo-command() {
+  if [[ "$livedemo_command" =~ ^[♬] ]]; then
+    livedemo_special=true
+    bind-enter-demo
+  fi
   READLINE_LINE="$livedemo_command"
   READLINE_POINT=${#READLINE_LINE}
   bind-enter-demo
 }
 
 finish-demo-command() {
-  if [ $READLINE_POINT -lt ${#livedemo_command} ]; then
-    livedemo_counter=$((livedemo_counter + 1))
-  fi
+  livedemo_counter=$((livedemo_counter + 1))
   livedemo_command=
   if [ $livedemo_counter -ge ${#livedemo_input[@]} ]; then
     livedemo_done=true
     exit 0
   fi
   demo-input-mode
+  livedemo_special=false
+}
+
+check-special() {
+  if $livedemo_special; then
+    READLINE_LINE="$livedemo_command"
+  fi
+}
+
+play-music() {
+  local song="$1" start="${2:-0}" length="${3:-5}"
+  mplayer "$livedemo_demo_dir/music/$1" \
+    -ss "$start" \
+    -endpos "$length" \
+    -really-quiet \
+    2> /dev/null
 }
 
 finish-shell-command() {
   shell_command="$READLINE_LINE"
+  livedemo_special=false
 }
 
 # Adds a <SPACE> at end to satisfy HISTIGNORE.
@@ -195,7 +229,7 @@ bind-enter-normal() {
 }
 
 bind-enter-demo() {
-  bind '\C-m:"\C-tA\C-td\C-tW"'
+  bind '\C-m:"\C-tS\C-tA\C-td"'
 }
 
 list-commands() {
@@ -263,6 +297,7 @@ reset-history() {
   for (( i = 0; i < $livedemo_counter; i++ )); do
     history -s "${livedemo_input[$i]}"
   done
+  history -w
   demo-input-mode
 }
 
@@ -323,17 +358,16 @@ if [ -n "$livedemo_running" ]; then
 
   bind -x '"\C-tB":shell-input-mode'
   bind -x '"\C-tb":finish-shell-command'
+  bind -x '"\C-tS":check-special'
 
   bind -x '"\C-tN":type-next-char'
   bind -x '"\C-tT":tab-complete-demo-command'
 
-  bind -x '"\C-tW":"history -w"'
-
-  bind '"\\+":"\C-ta\C-tW\C-tA"'
-  bind '"\\=":"\C-ta\C-tW\C-tA"'
+  bind '"\\+":"\C-ta\C-tA"'
+  bind '"\\=":"\C-ta\C-tA"'
   bind -x '"\C-ta":add-command'
 
-  bind '"\\-":"\C-tr\C-tW\C-tA"'
+  bind '"\\-":"\C-tr\C-tA"'
   bind -x '"\C-tr":remove-command'
 
   bind '"\\l":"\C-u\C-j\C-tl"'
@@ -359,6 +393,7 @@ if [ -n "$livedemo_running" ]; then
   if [ -z "$livedemo_original_input" ]; then
     startup=true
     livedemo_done=false
+    livedemo_special=false
     livedemo_counter=0
     livedemo_input=()
     while read -r line; do
@@ -389,6 +424,8 @@ Press \h at any time for help.
 
 "
   fi
+
+  alias ♬='play-music '
 
   demo-input-mode
 

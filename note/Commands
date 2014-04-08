@@ -17,3 +17,7 @@
 - notify-send
 - whiptail
 - dialog
+
+== Movies Music
+- mplayer
+- mpg321
