@@ -4,8 +4,6 @@
 # \g not resetting history #
 
 # == ToDo
-# Support special meta commands in demo input file
-# bind \<bsp> to undo-demo-command
 
 # == Maybe
 # Put live-demo into a single file (bin/live-demo)
@@ -15,18 +13,21 @@
 
 set -e
 
+export PROMPT_COMMAND=set-prompt
+
 OPTIONS_SPEC="\
 live-demo [<option>...] <file.demo>
 
 Options:
 --
-h           Show the command summary
+h             Show the command summary
  
-p,prompt=   Set the demo prompt to use
-g,goto=     Start demo at the specified command number
-q,quiet     Be more quiet
+p,prompt=     Set the demo prompt to use
+t,time=       Number of mins/secs left in prompt
+g,goto=       Start demo at the specified command number
+q,quiet       Be more quiet
  
-x           Debug - Turn on Bash trace (set -x) output
+x             Debug - Turn on Bash trace (set -x) output
 "
 
 help() {
@@ -77,6 +78,10 @@ get-opts() {
       -p) livedemo_prompt=$1; shift ;;
       -g) livedemo_goto=$1; shift ;;
       -q) livedemo_quiet=true ;;
+      -t)
+        livedemo_countdown=$1
+        livedemo_starttime=$(date +%s)
+        shift ;;
       -x) set -x ;;
       --) break ;;
       *) die "Unexpected option: $option" ;;
@@ -108,10 +113,10 @@ export-all() {
 }
 
 alert() {
-  do-whiptail "$1" || echo -n "$1"
+  alert-whiptail "$1" || echo -n "$1"
 }
 
-do-whiptail() {
+alert-whiptail() {
   $livedemo_quiet && return 0
   [ -n "$(which whiptail)" ] || return 1
   msg="$1"
@@ -124,6 +129,21 @@ do-whiptail() {
   done <<< "$msg"
   let w=$((w + 4))
   whiptail --msgbox "$msg" $h $w
+}
+
+set-prompt() {
+  [ -n "$livedemo_countdown" ] || return
+  local time=$(date +%s)
+  local diff=$((
+    livedemo_countdown * 60 -
+    (time - livedemo_starttime)
+  ))
+  local min=$((diff / 60))
+  local sec=$((diff % 60))
+  local stamp
+  printf -v stamp "(%d:%02d)" $min $sec
+
+  PS1="$stamp $livedemo_prompt"
 }
 
 abspath() { perl -MCwd -le 'print Cwd::abs_path(shift)' "$1"; }
@@ -168,7 +188,7 @@ shell-input-mode() {
 
 type-next-char() {
   $livedemo_special && return
-  if [[ "$livedemo_command" =~ ^[♬] ]]; then
+  if [[ "$livedemo_command" =~ ^[♈♥♬■🔥🌴Ⓕⓕ] ]]; then
     livedemo_special=true
     bind-enter-demo
   fi
@@ -182,7 +202,7 @@ type-next-char() {
 }
 
 tab-complete-demo-command() {
-  if [[ "$livedemo_command" =~ ^[♬] ]]; then
+  if [[ "$livedemo_command" =~ ^[♈♥♬■🔥🌴Ⓕⓕ] ]]; then
     livedemo_special=true
     bind-enter-demo
   fi
@@ -206,15 +226,6 @@ check-special() {
   if $livedemo_special; then
     READLINE_LINE="$livedemo_command"
   fi
-}
-
-play-music() {
-  local song="$1" start="${2:-0}" length="${3:-5}"
-  mplayer "$livedemo_demo_dir/music/$1" \
-    -ss "$start" \
-    -endpos "$length" \
-    -really-quiet \
-    2> /dev/null
 }
 
 finish-shell-command() {
@@ -343,6 +354,89 @@ title-set() {
 }
 
 #------------------------------------------------------------------------------
+do-alert() {
+  local w=0 h=5
+  alert=''
+  while read -r line; do
+    alert="$alert$line"$'\n\n'
+    h=$((h + 2))
+    [ ${#line} -gt $w ] && w=${#line}
+  done < "$livedemo_demo_dir/alert/$1"
+  let w=$((w + 4))
+  whiptail --msgbox "$alert" $h $w
+  echo ">>$alert<<"
+}
+
+do-vroom() {
+  (
+    cd "$livedemo_demo_dir/vroom/$1"
+    vroom vroom
+  )
+}
+
+do-music() {
+  while [ $# -gt 0 ]; do
+    if [[ ! $1 =~ ^[0-9.]+$ ]]; then
+      local song="$1"
+      shift
+    fi
+    if [[ $1 =~ ^[0-9.]+$ ]]; then
+      local start=0
+      start="$1"
+      shift
+    fi
+    if [[ $1 =~ ^[0-9.]+$ ]]; then
+      local length=5
+      length="$1"
+      shift
+    fi
+    mplayer "$livedemo_demo_dir/music/$song" \
+      -ss "$start" \
+      -endpos "$length" \
+      -really-quiet \
+      2> /dev/null
+  done
+}
+
+do-photo() {
+  geeqie -f "$livedemo_demo_dir/photo/$1" &>/dev/null
+}
+
+do-firefox() {
+   url="$1"
+   [[ "$url" =~ ^http ]] || url="http://$url"
+   firefox -P live-demo "$url" &>/dev/null
+}
+
+do-wiki() {
+  :
+}
+
+do-figlet() {
+  clear
+  font=standard
+  if [[ "$1" =~ ^- ]]; then
+    font="${1#-}"
+    shift
+  fi
+  for string; do
+    figlet -f $font -W -C utf8 -c -w $(tput cols) "$string" 2>/dev/null
+  done
+}
+
+do-bad-figlet() {
+  clear
+  font=standard
+  if [[ "$1" =~ ^- ]]; then
+    font="${1#-}"
+    shift
+  fi
+  for string; do
+    figlet -f $font -W -c -w $(tput cols) "$string"
+  done
+}
+
+#------------------------------------------------------------------------------
 # Initialize the LiveDemo™ Bash shell:
 #------------------------------------------------------------------------------
 if [ -n "$livedemo_running" ]; then
@@ -425,7 +519,15 @@ Press \h at any time for help.
 "
   fi
 
-  alias ♬='play-music '
+  alias ♈='do-alert'
+  alias ♥='do-vroom'
+  alias ♬='do-music'
+  alias ■='do-photo'
+  alias 🔥='do-firefox'
+  alias 🌴='do-wiki'
+  alias Ⓕ='do-figlet'
+  alias ⓕ='do-bad-figlet'
+  
 
   demo-input-mode
 
