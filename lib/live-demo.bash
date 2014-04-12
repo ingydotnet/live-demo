@@ -88,6 +88,10 @@ get-opts() {
     esac
   done
 
+  # XXX - For OSDC.tw only:
+  : ${livedemo_countdown:=30}
+  livedemo_starttime=$(date +%s)
+
   livedemo_demo_file="$1"; shift
   [ -n "$livedemo_demo_file" ] ||
     die "<demo-file> required"
@@ -141,9 +145,10 @@ set-prompt() {
   local min=$((diff / 60))
   local sec=$((diff % 60))
   local stamp
-  printf -v stamp "(%d:%02d)" $min $sec
-
-  PS1="$stamp $livedemo_prompt"
+  local light_cyan="\033[1;36m"
+  local reset="\033[0m"
+  printf -v stamp "$light_cyan(%d:%02d)$reset " $min $sec
+  echo $stamp
 }
 
 abspath() { perl -MCwd -le 'print Cwd::abs_path(shift)' "$1"; }
@@ -212,6 +217,7 @@ tab-complete-demo-command() {
 }
 
 finish-demo-command() {
+  # [[ "$livedemo_command" =~ \;$ ]] && clear
   livedemo_counter=$((livedemo_counter + 1))
   livedemo_command=
   if [ $livedemo_counter -ge ${#livedemo_input[@]} ]; then
@@ -375,27 +381,40 @@ do-vroom() {
 }
 
 do-music() {
-  while [ $# -gt 0 ]; do
-    if [[ ! $1 =~ ^[0-9.]+$ ]]; then
-      local song="$1"
-      shift
-    fi
-    if [[ $1 =~ ^[0-9.]+$ ]]; then
-      local start=0
-      start="$1"
-      shift
-    fi
-    if [[ $1 =~ ^[0-9.]+$ ]]; then
-      local length=5
-      length="$1"
-      shift
-    fi
-    mplayer "$livedemo_demo_dir/music/$song" \
-      -ss "$start" \
-      -endpos "$length" \
-      -really-quiet \
-      2> /dev/null
-  done
+  (
+    while [ $# -gt 0 ]; do
+      background=false
+      if [[ ! $1 =~ ^[0-9.]+$ ]]; then
+        local song="$1"
+        shift
+        if [[ "$song" =~ \+$ ]]; then
+          song="${song%+}"
+          background=true
+        fi
+      fi
+      if [[ $1 =~ ^[0-9.]+$ ]]; then
+        local start=0
+        start="$1"
+        shift
+      fi
+      if [[ $1 =~ ^[0-9.]+$ ]]; then
+        local length=5
+        length="$1"
+        shift
+      fi
+      local cmd=(
+        mplayer "$livedemo_demo_dir/music/$song"
+          -ss "$start"
+          -endpos "$length"
+          -really-quiet
+      )
+      if $background; then
+        "${cmd[@]}" 2> /dev/null &
+      else
+        "${cmd[@]}" 2> /dev/null
+      fi
+    done
+  )
 }
 
 do-photo() {
@@ -403,9 +422,16 @@ do-photo() {
 }
 
 do-firefox() {
-   url="$1"
-   [[ "$url" =~ ^http ]] || url="http://$url"
-   firefox -P live-demo "$url" &>/dev/null
+  firefox -no-remote -P LiveDemo -new-tab $@ &>/dev/null
+#   url="$1"
+#   shift
+#   firefox -no-remote -P LiveDemo "$url" &>/dev/null &
+#   while [ $# -gt 0 ]; do
+#     url="$1"
+#     shift
+#     [[ "$url" =~ ^http ]] || url="http://$url"
+#     firefox -P LiveDemoi "$url" &>/dev/null &
+#   done
 }
 
 do-wiki() {
@@ -527,7 +553,6 @@ Press \h at any time for help.
   alias 🌴='do-wiki'
   alias Ⓕ='do-figlet'
   alias ⓕ='do-bad-figlet'
-  
 
   demo-input-mode
 
